@@ -2,7 +2,7 @@ import { NextApiHandler } from "next";
 import { get, toggleStatus } from "~/lib/stash";
 
 const handler: NextApiHandler = async (req, res) => {
-	const todoId = req.query.id;
+	const todoId = req.query.todoId;
 
 	if (Array.isArray(todoId) || ~~todoId === 0) {
 		res.status(400).send('Invalid todoId')

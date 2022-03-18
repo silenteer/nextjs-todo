@@ -1,6 +1,6 @@
 import Head from 'next/head'
 import styles from '../styles/Home.module.css'
-import { useEffect, useState } from "react";
+import { SyntheticEvent, useState } from "react";
 
 import type { Todo, TodoId, TodoValue } from "~/lib/types";
 
@@ -10,32 +10,45 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 const q = new QueryClient();
 
 const loadTodosFn = () => fetch('/api/list').then(res => res.json() as Promise<{ todos: Todo[] }>)
+const loadTodoFn = (todoId: TodoId) => fetch(`/api/${todoId}`).then(res => res.json() as Promise<Todo>)
 const addTodoFn = (todo: TodoValue) => fetch('/api/add?todo=' + todo)
-const toggleTodoFn = (todo: TodoId) => fetch('/api/toggleStatus?id=' + todo)
+const toggleTodoFn = (todo: TodoId) => fetch('/api/toggleStatus?todoId=' + todo)
+const updateTodoFn = ({ id, updatedTodo }: { id: TodoId, updatedTodo: string }) => {
+  return fetch(`/api/update`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ id, todo: updatedTodo })
+  });
+}
 
 function Home() {
   const queryClient = useQueryClient();
-  const [todo, setTodo] = useState("");
+  const { data, isLoading: isTodoLoading } = useQuery(['todos'], loadTodosFn, {
+    keepPreviousData: true
+  });
+
+  const [todo, setTodo] = useState("");;
   let changeHandler = (event: any) => {
     setTodo(event.target.value)
   }
 
-  const { data, isLoading: isTodoLoading } = useQuery(['todos'], loadTodosFn);
+  const [selectedTodo, setSelectedTodo] = useState<TodoId | undefined>(undefined);
+
   const addTodo = useMutation(addTodoFn, {
-    onSuccess: (data) => {
-      queryClient.invalidateQueries(['todos'])
+    onSuccess: async () => {
+      await queryClient.invalidateQueries(['todos']);
+      setTodo('');
     }
   });
 
-  const toggleTodoStatus = useMutation(toggleTodoFn, {
-    onSuccess: (data) => {
-      queryClient.invalidateQueries(['todos'])
-    }
-  });
+  const handleAddTodoForm = (e: SyntheticEvent) => {
+    e.preventDefault();
+    addTodo.mutate(todo);
+    setTodo('');
+  }
 
-  const loading = isTodoLoading || addTodo.isLoading || toggleTodoStatus.isLoading;
-
-  if (!data) return <div>"Loading..."</div>;
   return (
     <div className={styles.container}>
       <Head>
@@ -49,32 +62,74 @@ function Home() {
             <br />
             <br />
           </h1>
-          {
-            loading &&
-            <a href="#" className={styles.card}>
-              <img src="/loader.gif" />
-            </a>
-          }
 
-          <form className={styles.cardForm} onSubmit={() => addTodo.mutate(todo)}>
+          <form className={styles.cardForm} onSubmit={handleAddTodoForm}>
             <input className={styles.cardInput} type="text"
+              value={todo}
               name="todo" onChange={changeHandler}
               placeholder="Enter your exciting TODO item!" />
           </form>
 
-          {data.todos.map((item) =>
-            <a key={item.id} onClick={() => toggleTodoStatus.mutate(item.id)} className={styles.card}>
+          {data?.todos.map((item) =>
+            <a key={item.id} onClick={() => setSelectedTodo(item.id)} className={styles.card}>
               <p style={{
                 ...item.done ? { textDecoration: 'line-through' } : {}
               }}>{item.todo}</p>
             </a>)}
-
         </div>
-      </main>
 
+        <SelectedTodo id={selectedTodo} />
+      </main>
 
     </div>
   )
+}
+
+type SelectedTodoProps = {
+  id: TodoId | undefined;
+}
+
+function SelectedTodo({ id }: SelectedTodoProps) {
+  const queryClient = useQueryClient();
+
+  const [isEditMode, toggleEditMode] = useState(false);
+  const { data, isLoading } = useQuery(id !== undefined ? ['todos', id] : undefined, () => loadTodoFn(id), {
+    onSuccess: (data) => setTodoInput(data.todo),
+  })
+
+  const [todoInput, setTodoInput] = useState(data?.todo);
+
+  const updateTodo = useMutation(updateTodoFn, {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries(['todos']);
+      toggleEditMode(false);
+    }
+  })
+
+  const toggleStatus = useMutation(toggleTodoFn, {
+    onSuccess: async () => await queryClient.invalidateQueries(['todos'])
+  })
+
+  if (!data) return null;
+
+  return <div className={styles.todo}>
+    {isEditMode
+      ? <div><input value={todoInput} onChange={(e) => setTodoInput(e.target.value)} /></div>
+      : <h2 data-done={!!data.done}>{data.todo}</h2>
+    }
+    <input id="done" type="checkbox" defaultChecked={data.done} onChange={() => toggleStatus.mutate(id)} />
+    <label htmlFor='done'>Completed</label>
+
+    <div className={styles.buttons}>
+      {!isEditMode && <button onClick={() => { toggleEditMode(current => !current) }}>Edit</button>}
+      {isEditMode &&
+        <>
+          <button onClick={() => updateTodo.mutate({ id, updatedTodo: todoInput })}>Save</button>
+          <button onClick={() => toggleEditMode(false)}>Cancel</button>
+        </>
+      }
+    </div>
+  </div >
 }
 
 const HomeWrapper = () =>

@@ -24,8 +24,13 @@ function toggleStatus(id: TodoId) {
   globalThis.store[id].done = !!!globalThis.store[id].done;
 }
 
+function update(id: TodoId, value: string) {
+  console.log(id, value);
+  globalThis.store[id].todo = value;
+}
+
 function list(): Todo[] {
   return Object.values(globalThis.store);
 }
 
-export { add, get, toggleStatus, list }
+export { add, get, update, toggleStatus, list }
